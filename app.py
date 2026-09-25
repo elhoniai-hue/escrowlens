@@ -112,30 +112,30 @@ def check_address(addr):
         score, notes = 0, []
         if stable > 0:
             score += 45
-            notes.append(f"يحمل {stable:,.2f} دولار مستقر (USDC/USDG/USDT) على السلسلة")
+            notes.append(f"Holds {stable:,.2f} in stablecoins (USDC/USDG/USDT) on-chain")
         else:
-            notes.append("لا توجد عملات مستقرة في هذا العنوان")
+            notes.append("No stablecoins found on this address")
         if sol_mn > 0.01:
             score += 20
-            notes.append(f"رصيد {sol_mn:.4f} SOL على mainnet (عنوان مستخدم فعلاً)")
+            notes.append(f"Holds {sol_mn:,.4f} SOL on mainnet — a real, in-use address")
         if out["tx_count"] >= 5:
             score += 20
-            notes.append(f"{out['tx_count']} معاملة حديثة — عنوان نشط")
+            notes.append(f"{out['tx_count']} recent transactions — active address")
         elif out["tx_count"] > 0:
             score += 8
-            notes.append("نشاط قليل على السلسلة")
+            notes.append("Low on-chain activity")
         else:
-            notes.append("⚠️ لا نشاط على السلسلة — عنوان جديد أو وهمي")
+            notes.append("No on-chain activity — new or empty address")
         if out["last_tx"]:
             days = (time.time() - out["last_tx"]) / 86400
             if days < 30:
                 score += 15
-                notes.append(f"آخر معاملة قبل {days:.0f} يوم")
+                notes.append(f"Last transaction {days:.0f} day(s) ago")
         out["score"] = min(score, 100)
         out["notes"] = notes
-        out["verdict"] = ("مؤشر ثقة عالٍ" if score >= 70 else
-                          "يحتاج تحقق يدوي" if score >= 40 else
-                          "خطر مرتفع — لا تبدي شغلاً")
+        out["verdict"] = ("High trust — safe to proceed" if score >= 70 else
+                          "Needs manual verification" if score >= 40 else
+                          "High risk — do not start work")
         out["explorer_devnet"] = solscan(addr, "devnet")
         out["explorer_mainnet"] = solscan(addr)
     except Exception as e:                           # noqa: BLE001
@@ -163,12 +163,18 @@ class Handler(BaseHTTPRequestHandler):
             addr = (parse_qs(u.query).get("address") or [""])[0]
             self._send(200, json.dumps(check_address(addr), ensure_ascii=False))
             return
-        if u.path in ("/", "/index.html"):
-            with open(os.path.join(HERE, "public", "index.html"), "rb") as f:
-                self._send(200, f.read(), "text/html; charset=utf-8")
-            return
         if u.path == "/health":
-            self._send(200, json.dumps({"ok": True, "rpc": RPC}))
+            self._send(200, json.dumps({"ok": True, "rpc": RPC,
+                                        "cluster": "devnet+mainnet"}))
+            return
+        # ملفات ثابتة (الصفحة + فيديو العرض)
+        import mimetypes
+        rel = u.path.lstrip("/") or "index.html"
+        fp = os.path.normpath(os.path.join(HERE, "public", rel))
+        if fp.startswith(os.path.join(HERE, "public")) and os.path.isfile(fp):
+            ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
+            with open(fp, "rb") as f:
+                self._send(200, f.read(), ctype)
             return
         self._send(404, json.dumps({"error": "not found"}))
 
