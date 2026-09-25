@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EscrowLens — Verify escrow before you work</title>
+<style>
+  :root{
+    --bg:#0b0f14; --card:#121821; --card2:#161e29; --line:#233042;
+    --tx:#e7eef7; --mut:#8fa3bb; --acc:#14f195; --acc2:#9945ff;
+    --warn:#ffb020; --bad:#ff5c5c; --ok:#14f195;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 20% -10%,#16233a 0%,var(--bg) 55%);
+       color:var(--tx);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 20px 60px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+        display:grid;place-items:center;font-weight:800;color:#08111a;font-size:17px}
+  h1{font-size:20px;margin:0;letter-spacing:.2px}
+  .tag{color:var(--mut);font-size:13px}
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:18px}
+  .hero h2{margin:0 0 6px;font-size:17px}
+  .hero p{margin:0 0 16px;color:var(--mut);font-size:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input{flex:1;min-width:260px;background:var(--card2);border:1px solid var(--line);color:var(--tx);
+        padding:13px 14px;border-radius:11px;font:14px ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}
+  input:focus{border-color:var(--acc)}
+  button{background:linear-gradient(135deg,var(--acc),#0fd07d);color:#062015;border:0;padding:13px 22px;
+         border-radius:11px;font-weight:700;cursor:pointer;font-size:14px}
+  button:hover{filter:brightness(1.07)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--mut);font-weight:600}
+  .ex{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .ex span{font-size:12px;color:var(--mut);cursor:pointer;border:1px dashed var(--line);
+            padding:5px 10px;border-radius:20px}
+  .ex span:hover{color:var(--tx);border-color:var(--acc)}
+  #out{margin-top:18px}
+  .grid{display:grid;grid-template-columns:210px 1fr;gap:16px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .gauge{display:grid;place-items:center;text-align:center}
+  .ring{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;position:relative}
+  .ring .in{width:118px;height:118px;border-radius:50%;background:var(--card);
+            display:grid;place-items:center;flex-direction:column}
+  .score{font-size:34px;font-weight:800;line-height:1}
+  .score small{display:block;font-size:11px;color:var(--mut);font-weight:500;margin-top:3px}
+  .verdict{margin-top:12px;font-weight:700;font-size:14px}
+  ul.notes{margin:0;padding:0;list-style:none}
+  ul.notes li{padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px}
+  ul.notes li:last-child{border:0}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .kv:last-child{border:0}
+  .kv b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
+  .pill.ok{color:#0b1a12;background:var(--ok);border-color:var(--ok);font-weight:700}
+  .pill.warn{color:#1c1400;background:var(--warn);border-color:var(--warn);font-weight:700}
+  .pill.bad{color:#fff;background:var(--bad);border-color:var(--bad);font-weight:700}
+  .sec-title{font-size:12px;text-transform:uppercase;letter-spacing:.9px;color:var(--mut);margin:18px 0 8px}
+  .hidden{display:none}
+  footer{color:var(--mut);font-size:12.5px;margin-top:26px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">EL</div>
+    <div>
+      <h1>EscrowLens</h1>
+      <div class="tag">Check that the escrow actually exists — before you do the work.</div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <h2>Paste a Solana wallet, escrow address, or client payout address</h2>
+    <p>EscrowLens reads the chain directly and tells you whether the money is really there — and whether the payer looks real.</p>
+    <div class="row">
+      <input id="addr" placeholder="Solana address (e.g. 55WStgCx6Q8x58xiq5AbCS9BCXMXAG9iuZpAeHzYf9yW)" autocomplete="off">
+      <button onclick="run()">Verify</button>
+      <button class="ghost" onclick="run('55WStgCx6Q8x58xiq5AbCS9BCXMXAG9iuZpAeHzYf9yW')">Demo</button>
+    </div>
+    <div class="ex">
+      <span onclick="run('55WStgCx6Q8x58xiq5AbCS9BCXMXAG9iuZpAeHzYf9yW')">our wallet</span>
+      <span onclick="run('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')">Token program</span>
+      <span onclick="run('11111111111111111111111111111111')">System program</span>
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <footer>
+    EscrowLens · live Solana RPC (devnet + mainnet) · built for the Road to Colosseum MVP bounty ·
+    <span id="rpc"></span>
+  </footer>
+</div>
+
+<script>
+const fmt = (n,d=4)=> (n||0).toLocaleString(undefined,{maximumFractionDigits:d});
+const ts = s => s ? new Date(s*1000).toLocaleString() : "—";
+
+async function run(addr){
+  const a = addr || document.getElementById('addr').value.trim();
+  if(!a){ return; }
+  document.getElementById('addr').value = a;
+  document.getElementById('out').innerHTML = '<div class="card">⏳ Reading Solana…</div>';
+  try{
+    const r = await fetch('/api/check?address='+encodeURIComponent(a));
+    const d = await r.json();
+    if(!d.ok){ document.getElementById('out').innerHTML =
+      '<div class="card" style="border-color:#5c2b2b">⚠️ '+(d.error||'failed')+'</div>'; return; }
+    render(d);
+  }catch(e){
+    document.getElementById('out').innerHTML = '<div class="card">⚠️ '+e+'</div>';
+  }
+}
+
+function render(d){
+  const cls = d.score>=70?'ok':(d.score>=40?'warn':'bad');
+  const items = d.tokens.length ? d.tokens.map(t=>
+      `<div class="kv"><span>${t.symbol}</span><b>${fmt(t.amount,4)}</b></div>`).join('')
+    : '<div class="kv"><span>No SPL tokens found</span><b>—</b></div>';
+  const txs = d.recent.length ? d.recent.map(t=>
+      `<div class="kv"><a class="mono" href="https://solscan.io/tx/${t.sig}" target="_blank">${t.sig.slice(0,22)}…</a>
+       <span>${t.err?'❌':'✅'} ${ts(t.time)}</span></div>`).join('')
+    : '<div class="kv"><span>No recent transactions</span><b>—</b></div>';
+
+  document.getElementById('out').innerHTML = `
+  <div class="grid">
+    <div class="card gauge">
+      <div class="ring" style="background:conic-gradient(${d.score>=70?'#14f195':d.score>=40?'#ffb020':'#ff5c5c'} ${d.score*3.6}deg, #1d2735 0)">
+        <div class="in"><div class="score">${d.score}<small>TRUST SCORE</small></div></div>
+      </div>
+      <div class="verdict" style="color:${d.score>=70?'#14f195':d.score>=40?'#ffb020':'#ff5c5c'}">${d.verdict}</div>
+      <div style="margin-top:8px"><span class="pill ${cls}">${d.tx_count} tx</span></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-title">Why this score</div>
+      <ul class="notes">${d.notes.map(n=>`<li>${n}</li>`).join('')}</ul>
+
+      <div class="sec-title">On-chain balances</div>
+      <div class="kv"><span>SOL (mainnet)</span><b>${fmt(d.lamports_mainnet/1e9,6)}</b></div>
+      <div class="kv"><span>SOL (devnet)</span><b>${fmt(d.lamports_devnet/1e9,6)}</b></div>
+      ${items}
+
+      <div class="sec-title">Recent activity (mainnet)</div>
+      ${txs}
+
+      <div class="sec-title">Prove it</div>
+      <div class="kv"><span>Address</span><span class="mono">${d.address.slice(0,10)}…${d.address.slice(-6)}</span></div>
+      <div class="kv"><span>Explorer</span>
+        <span><a href="${d.explorer_mainnet}" target="_blank">mainnet</a> ·
+              <a href="${d.explorer_devnet}" target="_blank">devnet</a></span></div>
+    </div>
+  </div>`;
+}
+
+fetch('/health').then(r=>r.json()).then(h=>{
+  document.getElementById('rpc').textContent = h.rpc.includes('devnet') ? 'devnet + mainnet' : 'mainnet';
+}).catch(()=>{});
+
+document.getElementById('addr').addEventListener('keydown', e=>{ if(e.key==='Enter') run(); });
+</script>
+</body>
+</html>
