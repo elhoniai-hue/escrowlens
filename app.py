@@ -13,28 +13,49 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 PORT = int(os.environ.get("PORT", 80))
-RPC = os.environ.get("SOLANA_RPC", "https://api.devnet.solana.com")
-RPC_MAIN = "https://api.mainnet-beta.solana.com"
+# عدة نقاط RPC مع تبديل تلقائي عند الفشل أو الحظر
+RPC_ENDPOINTS = {
+    "devnet": ["https://api.devnet.solana.com"],
+    "mainnet": [
+        "https://api.mainnet-beta.solana.com",
+        "https://solana-rpc.publicnode.com",
+        "https://rpc.ankr.com/solana",
+    ],
+}
+RPC = RPC_ENDPOINTS["devnet"][0]
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-KNOWN_TOKENS = {
+# العملات المستقرة — وهي المقياس الحقيقي لوجود «الفلوس» في الضمان
+STABLE_MINTS = {
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
     "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": "USDG",
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT",
-    "So11111111111111111111111111111111111111112": "SOL (wrapped)",
 }
+KNOWN_TOKENS = {**STABLE_MINTS,
+                "So11111111111111111111111111111111111111112": "SOL (wrapped)"}
 
 _cache = {}
 
 
-def rpc(method, params, main=False, timeout=25):
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
-                       "params": params}).encode()
-    req = urllib.request.Request(RPC_MAIN if main else RPC, data=body,
-                                 headers={"Content-Type": "application/json",
-                                          "User-Agent": "EscrowLens/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r).get("result")
+def rpc(method, params, main=False, timeout=25, _tries=2):
+    """استدعاء RPC مع تبديل تلقائي بين النقاط عند الفشل/الحظر."""
+    endpoints = RPC_ENDPOINTS["mainnet"] if main else RPC_ENDPOINTS["devnet"]
+    last = None
+    for attempt in range(max(1, _tries)):
+        for url in endpoints:
+            try:
+                body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
+                                   "params": params}).encode()
+                req = urllib.request.Request(url, data=body,
+                                             headers={"Content-Type": "application/json",
+                                                      "User-Agent": "EscrowLens/1.0"})
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    return json.load(r).get("result")
+            except Exception as e:                   # noqa: BLE001
+                last = e
+                continue
+        time.sleep(0.6)
+    raise last if last else RuntimeError("no RPC endpoint available")
 
 
 def solscan(address, cluster=""):
@@ -57,24 +78,23 @@ def check_address(addr):
         for tag, main in (("devnet", False), ("mainnet", True)):
             bal = rpc("getBalance", [addr], main=main) or {}
             out[f"lamports_{tag}"] = bal.get("value", 0)
-        # التوكنات
+        # التوكنات: نسأل عن كل عملة مستقرة بمفردها (أسرع وأدق بكثير من سحب كل الحسابات)
         toks = []
-        try:
-            res = rpc("getTokenAccountsByOwner",
-                      [addr, {"programId": TOKEN_PROGRAM},
-                       {"encoding": "jsonParsed"}]) or {}
-            for acc in res.get("value", []):
-                info = acc["account"]["data"]["parsed"]["info"]
-                ui = info["tokenAmount"]
-                toks.append({
-                    "mint": info["mint"],
-                    "symbol": KNOWN_TOKENS.get(info["mint"], info["mint"][:6] + "…"),
-                    "amount": float(ui.get("uiAmountString") or 0),
-                    "decimals": ui.get("decimals"),
-                    "account": acc["pubkey"],
-                })
-        except Exception:                            # noqa: BLE001
-            pass
+        for mint, sym in STABLE_MINTS.items():
+            try:
+                res = rpc("getTokenAccountsByOwner",
+                          [addr, {"mint": mint}, {"encoding": "jsonParsed"}],
+                          main=True, timeout=20) or {}
+                for acc in res.get("value", []):
+                    info = acc["account"]["data"]["parsed"]["info"]
+                    ui = info["tokenAmount"]
+                    amt = float(ui.get("uiAmountString") or 0)
+                    if amt:
+                        toks.append({"mint": mint, "symbol": sym, "amount": amt,
+                                     "decimals": ui.get("decimals"),
+                                     "account": acc["pubkey"]})
+            except Exception:                        # noqa: BLE001
+                continue
         out["tokens"] = sorted(toks, key=lambda x: -x["amount"])
         # النشاط
         sigs = rpc("getSignaturesForAddress", [addr, {"limit": 15}], main=True) or []
